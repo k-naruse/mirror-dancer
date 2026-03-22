@@ -209,22 +209,39 @@ class _CompareTabState extends ConsumerState<CompareTab> {
       _stopPositionTimer();
       setState(() => _syncPlaying = false);
     } else {
-      if (hasRef) {
-        _refController!.setPlaybackSpeed(_speed);
-        final extra = _offsetSeconds < 0
-            ? Duration(milliseconds: (-_offsetSeconds * 1000).round())
-            : Duration.zero;
-        await _refController!.seekTo(_refTrimStart + extra);
+      if (hasRef) _refController!.setPlaybackSpeed(_speed);
+      if (hasMy) _myController!.setPlaybackSpeed(_speed);
+      // Apply offset: shift whichever video should start later
+      if (hasRef && hasMy) {
+        if (_offsetSeconds > 0) {
+          // My video starts later → ref at current pos, my at offset
+          final myPos = await _myController!.position ?? Duration.zero;
+          final refPos = await _refController!.position ?? Duration.zero;
+          final myTarget = Duration(
+              milliseconds:
+                  (refPos.inMilliseconds - (_offsetSeconds * 1000).round())
+                      .clamp(0, _myController!.value.duration.inMilliseconds));
+          if ((myPos - myTarget).abs() > const Duration(milliseconds: 200)) {
+            await _myController!.seekTo(myTarget);
+          }
+        } else if (_offsetSeconds < 0) {
+          // Ref starts later → my at current pos, ref at offset
+          final myPos = await _myController!.position ?? Duration.zero;
+          final refTarget = Duration(
+              milliseconds:
+                  (myPos.inMilliseconds + (_offsetSeconds * 1000).round())
+                      .clamp(0, _refController!.value.duration.inMilliseconds));
+          final refPos = await _refController!.position ?? Duration.zero;
+          if ((refPos - refTarget).abs() > const Duration(milliseconds: 200)) {
+            await _refController!.seekTo(refTarget);
+          }
+        }
       }
-      if (hasMy) {
-        _myController!.setPlaybackSpeed(_speed);
-        final extra = _offsetSeconds > 0
-            ? Duration(milliseconds: (_offsetSeconds * 1000).round())
-            : Duration.zero;
-        await _myController!.seekTo(_myTrimStart + extra);
-      }
-      if (hasRef) await _refController!.play();
-      if (hasMy) await _myController!.play();
+      // Start both simultaneously to minimize drift
+      await Future.wait([
+        if (hasRef) _refController!.play(),
+        if (hasMy) _myController!.play(),
+      ]);
       _startPositionTimer();
       setState(() => _syncPlaying = true);
     }
@@ -233,11 +250,25 @@ class _CompareTabState extends ConsumerState<CompareTab> {
   Future<void> _rewindBoth() async {
     if (_refController?.value.isInitialized ?? false) {
       await _refController!.pause();
-      await _refController!.seekTo(_refTrimStart);
+      if (_offsetSeconds < 0) {
+        // Ref starts later: seek ref to offset amount from trim start
+        final refStart = _refTrimStart +
+            Duration(milliseconds: (-_offsetSeconds * 1000).round());
+        await _refController!.seekTo(refStart);
+      } else {
+        await _refController!.seekTo(_refTrimStart);
+      }
     }
     if (_myController?.value.isInitialized ?? false) {
       await _myController!.pause();
-      await _myController!.seekTo(_myTrimStart);
+      if (_offsetSeconds > 0) {
+        // My starts later: seek my to offset amount from trim start
+        final myStart = _myTrimStart +
+            Duration(milliseconds: (_offsetSeconds * 1000).round());
+        await _myController!.seekTo(myStart);
+      } else {
+        await _myController!.seekTo(_myTrimStart);
+      }
     }
     _stopPositionTimer();
     setState(() => _syncPlaying = false);

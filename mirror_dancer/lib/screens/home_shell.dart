@@ -7,16 +7,41 @@ import 'reference_tab.dart';
 import 'my_videos_tab.dart';
 import 'settings_tab.dart';
 
-class HomeShell extends ConsumerWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tabIndex = ref.watch(selectedTabProvider);
+  ConsumerState<HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends ConsumerState<HomeShell> {
+  late final CupertinoTabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = CupertinoTabController(
+      initialIndex: ref.read(selectedTabProvider),
+    );
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<int>(selectedTabProvider, (_, next) {
+      if (_tabController.index != next) {
+        _tabController.index = next;
+      }
+    });
 
     return CupertinoTabScaffold(
+      controller: _tabController,
       tabBar: CupertinoTabBar(
-        currentIndex: tabIndex,
         onTap: (i) => ref.read(selectedTabProvider.notifier).state = i,
         backgroundColor: AppColors.tabBg.withValues(alpha: 0.95),
         activeColor: AppColors.accent,
